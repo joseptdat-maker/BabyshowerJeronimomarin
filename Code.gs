@@ -14,6 +14,11 @@ const ENCABEZADOS = ['Fecha', 'Regalo', 'Categoría', 'Nombre', 'Mensaje', 'Esta
 
 // Varias personas pueden escoger el mismo regalo; la página les avisa que alguien más también lo dará.
 
+// Únicos regalos que se pueden escoger ahora (lista nueva). La lista anterior queda cerrada:
+// se sigue viendo en la página, pero ya no acepta nuevas selecciones ni cambios.
+const ABIERTOS = ['n-panales-2', 'n-panales-3', 'n-panales-4', 'n-panitos', 'n-ropa'];
+const CERRADO = 'Esta parte de la lista ya está cerrada.';
+
 // Lo que hace la página: reservar, cancelar, otro regalo o consultar el estado.
 function procesar(d) {
   const lock = LockService.getScriptLock();
@@ -26,6 +31,7 @@ function procesar(d) {
     if (d.accion === 'reservar') {
       const id = limpiar(d.id, 40);
       const nombre = limpiar(d.nombre, 80);
+      if (ABIERTOS.indexOf(id) === -1) return ({ ok: false, error: CERRADO, estado: estado(hoja, device) });
       if (!id || nombre.length < 2) return ({ ok: false, error: 'Escribe tu nombre, por favor.', estado: estado(hoja, device) });
       const activos = filas(hoja).filter(r => r.estado === 'Activo' && r.id === id);
       if (activos.some(r => r.device === device)) return ({ ok: false, error: 'Ya apartaste este regalo.', estado: estado(hoja, device) });
@@ -34,6 +40,7 @@ function procesar(d) {
 
     else if (d.accion === 'cancelar') {
       const id = limpiar(d.id, 40);
+      if (ABIERTOS.indexOf(id) === -1) return ({ ok: false, error: CERRADO, estado: estado(hoja, device) });
       filas(hoja).forEach(r => {
         if (r.id === id && r.device === device && r.estado === 'Activo') hoja.getRange(r.fila, 6).setValue('Cancelado');
       });
