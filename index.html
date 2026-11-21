@@ -122,6 +122,15 @@
   .item.mio{background:#EEF8F3;border-color:#BFE3D2}
   .item.mio .nom{color:var(--texto);text-decoration:none}
   .sello.mio{color:var(--ok)}
+  .seccion-titulo.anterior{margin-top:44px}
+  .seccion-titulo.anterior h2{font-size:32px;color:var(--suave)}
+  .cat.nueva{border:2px solid var(--oro);box-shadow:0 12px 34px rgba(245,196,83,.25)}
+  .cat.vieja{opacity:.92}
+  .cat.vieja .gift{filter:grayscale(.35)}
+  .item.cerrado{background:#F5F7FA;border-color:#E6EAF0}
+  .item.cerrado .nom{color:#8C99AE}
+  .item.cerrado.mio{background:#EEF8F3;border-color:#BFE3D2}
+  .item.cerrado.mio .nom{color:var(--texto)}
   .acciones{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
 
   /* Otro regalo */
@@ -274,7 +283,7 @@
   <div id="demo" class="demo" hidden>Modo de prueba: las selecciones solo se guardan en este celular o computador. Para guardarlas en tu Google Sheet, pega el enlace de Apps Script en SCRIPT_URL.</div>
 
   <section class="card como" aria-label="Cómo usar la lista">
-    <div class="paso"><div class="n">1</div><p>Abre una categoría y mira las sugerencias de regalo.</p></div>
+    <div class="paso"><div class="n">1</div><p>Mira lo que necesitamos ahora, al principio de la lista.</p></div>
     <div class="paso"><div class="n">2</div><p>Toca <b>«Lo regalaré»</b> en lo que vas a dar y escribe tu nombre.</p></div>
     <div class="paso"><div class="n">3</div><p>Si alguien más ya lo escogió, te avisamos para que lo sepas.</p></div>
   </section>
@@ -286,8 +295,8 @@
   </section>
 
   <div class="seccion-titulo">
-    <h2>Lo que nos gustaría recibir</h2>
-    <p>Toca cada categoría para ver las sugerencias</p>
+    <h2>Lo que necesitamos ahora</h2>
+    <p>Ya recibimos mucho cariño 💙 Ahora solo nos hacen falta estas cosas</p>
   </div>
 
   <div class="progreso" aria-live="polite">
@@ -296,6 +305,12 @@
   </div>
 
   <div id="cargando" class="cargando"><span class="spin"></span>Cargando la lista…</div>
+  <div class="cats" id="catsNueva"></div>
+
+  <div class="seccion-titulo anterior">
+    <h2>Lista anterior</h2>
+    <p>Esta lista ya está cerrada y no se puede escoger. Si ya habías escogido algo, aquí lo puedes recordar 💙</p>
+  </div>
   <div class="cats" id="cats"></div>
 
   <section class="card otro" style="margin-top:26px">
@@ -334,9 +349,19 @@ const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwvR8XjSIEpEcJOE_HqY
 /* ============ Lista de regalos (del documento) ============ */
 const YA_TIENE = ['Teteros','Hervidor de agua','Extractor de leche','Colonias','Cuna o colecho','Sábanas','Bolsas para almacenar leche'];
 
-/* Todos los regalos los pueden escoger varias personas; la página avisa cuántos ya lo darán */
+/* ============ LISTA NUEVA (la única que se puede escoger) ============
+   Si cambias o agregas un regalo aquí, pon también su código (id) en ABIERTOS dentro de Code.gs. */
+const NUEVA = { id:'ahora', emoji:'🎁', nombre:'Lo que necesitamos ahora', top:true, items:[
+  { id:'n-panales-2', nombre:'Pañales etapa 2' },
+  { id:'n-panales-3', nombre:'Pañales etapa 3' },
+  { id:'n-panales-4', nombre:'Pañales etapa 4 en adelante' },
+  { id:'n-panitos',   nombre:'Pañitos húmedos' },
+  { id:'n-ropa',      nombre:'Ropa de talla grande' },
+]};
+
+/* ============ LISTA ANTERIOR (cerrada: solo se ve, ya no se puede escoger) ============ */
 const CATEGORIAS = [
-  { id:'panales', emoji:'🧷', nombre:'Pañales y cambio', top:true, items:[
+  { id:'panales', emoji:'🧷', nombre:'Pañales y cambio', items:[
     { id:'panales-2',  nombre:'Pañales talla 2' },
     { id:'panales-3',  nombre:'Pañales talla 3' },
     { id:'panales-4',  nombre:'Pañales talla 4 en adelante' },
@@ -390,9 +415,12 @@ const CATEGORIAS = [
 
 /* ============ Estado ============ */
 const $ = s => document.querySelector(s);
-const ITEMS = {}; CATEGORIAS.forEach(c => c.items.forEach(i => ITEMS[i.id] = { ...i, cat:c }));
+const ITEMS = {};
+NUEVA.items.forEach(i => ITEMS[i.id] = { ...i, cat:NUEVA, abierto:true });
+CATEGORIAS.forEach(c => c.items.forEach(i => ITEMS[i.id] = { ...i, cat:c, abierto:false }));
 let estado = {};          // { idRegalo: { total:n, mio:bool } }
-const abiertas = new Set(['panales']);
+const abiertas = new Set(['ahora']);
+let primeraCarga = true;
 const LS = (() => { try { localStorage.setItem('_t','1'); return localStorage; } catch (e) { const m = {}; return { getItem:k => m[k] ?? null, setItem:(k,v) => m[k] = String(v) }; } })();
 const DEVICE = (() => {
   let d = LS.getItem('bsj_device');
@@ -424,6 +452,7 @@ function apiDemo(d) {
   if (d.accion === 'reservar') {
     const it = ITEMS[d.id];
     if (!it) return { ok:false, error:'Regalo no encontrado' };
+    if (!it.abierto) return { ok:false, error:'Esta parte de la lista ya está cerrada.' };
     if (activos.some(r => r.id === d.id && r.device === DEVICE)) return { ok:false, error:'Ya apartaste este regalo' };
     db.push({ id:d.id, nombre:d.nombre, device:DEVICE, estado:'Activo' }); guardar();
   } else if (d.accion === 'cancelar') {
@@ -441,7 +470,13 @@ function apiDemo(d) {
 async function cargar() {
   try {
     const r = await api({ accion:'estado' });
-    if (r.ok) estado = r.estado || {};
+    if (r.ok) {
+      estado = r.estado || {};
+      if (primeraCarga) { // abre las categorías anteriores donde esta persona ya escogió algo, para que lo recuerde
+        CATEGORIAS.forEach(c => { if (c.items.some(i => estado[i.id] && estado[i.id].mio)) abiertas.add(c.id); });
+        primeraCarga = false;
+      }
+    }
     else aviso('No se pudo cargar la lista. Intenta de nuevo.');
   } catch (e) { aviso('Sin conexión. Revisa tu internet y recarga la página.'); }
   $('#cargando').hidden = true;
@@ -451,15 +486,15 @@ async function cargar() {
 /* ============ Dibujar la lista ============ */
 function pintar() {
   $('#yaTiene').innerHTML = YA_TIENE.map(t => `<span class="chip">${esc(t)}</span>`).join('');
-  let total = 0, apartados = 0;
-  $('#cats').innerHTML = CATEGORIAS.map(c => {
-    let libres = 0;
-    const lis = c.items.map(i => {
-      total++;
-      const st = estado[i.id] || { total:0, mio:false };
-      if (st.total > 0) apartados++; else libres++;
-      const otros = st.total - (st.mio ? 1 : 0);
-      let cls = 'item', accion;
+  let total = 0, escogidos = 0;
+
+  const fila = item => {
+    const i = ITEMS[item.id];
+    const st = estado[i.id] || { total:0, mio:false };
+    const otros = st.total - (st.mio ? 1 : 0);
+    let cls = 'item', accion, nota = '';
+    if (i.abierto) {
+      total++; if (st.total > 0) escogidos++;
       if (st.mio) {
         cls += ' mio';
         accion = `<div class="acciones"><span class="sello mio">💙 Lo darás tú</span><button class="btn btn-suave" data-cancelar="${i.id}">Ya no lo daré</button></div>`;
@@ -469,27 +504,41 @@ function pintar() {
       } else {
         accion = `<button class="btn btn-azul" data-reservar="${i.id}">Lo regalaré</button>`;
       }
-      const nota = otros > 0
-        ? `<span class="nota aviso-otro">🎀 ${otros === 1 ? 'Alguien más también lo va a dar' : 'Ya ' + otros + ' personas lo van a dar'}</span>`
-        : '';
-      return `<li class="${cls}"><span class="nom">${esc(i.nombre)}${nota}</span>${accion}</li>`;
-    }).join('');
+      if (otros > 0) nota = `<span class="nota aviso-otro">🎀 ${otros === 1 ? 'Alguien más también lo va a dar' : 'Ya ' + otros + ' personas lo van a dar'}</span>`;
+    } else {
+      cls += ' cerrado';
+      if (st.mio) { cls += ' mio'; accion = `<span class="sello mio">💙 Tú lo escogiste</span>`; }
+      else if (st.total > 0) accion = `<span class="sello">🎀 Ya escogido</span>`;
+      else accion = `<span class="sello">🔒 Cerrado</span>`;
+    }
+    return `<li class="${cls}"><span class="nom">${esc(i.nombre)}${nota}</span>${accion}</li>`;
+  };
+
+  const tarjeta = c => {
     const ab = abiertas.has(c.id);
-    return `<article class="cat${ab ? ' abierta' : ''}" data-cat="${c.id}">
+    const abierto = c === NUEVA;
+    const mios = c.items.filter(i => estado[i.id] && estado[i.id].mio).length;
+    const sub = abierto
+      ? `${c.items.length} sugerencias · puedes escoger cualquiera`
+      : (mios ? `💙 Escogiste ${mios} ${mios === 1 ? 'regalo' : 'regalos'} aquí` : `${c.items.length} sugerencias · lista cerrada`);
+    return `<article class="cat${ab ? ' abierta' : ''}${abierto ? ' nueva' : ' vieja'}" data-cat="${c.id}">
       <button class="cat-head" aria-expanded="${ab}" data-abrir="${c.id}">
         <span class="gift" aria-hidden="true">${c.emoji}</span>
         <span class="cat-info"><b>${esc(c.nombre)}${c.top ? '<span class="tag-top">Lo que más necesitamos</span>' : ''}</b>
-        <small>${c.items.length} sugerencias · ${libres} sin escoger todavía</small></span>
+        <small>${sub}</small></span>
         <span class="flecha" aria-hidden="true">▾</span>
       </button>
-      <div class="cat-body"><div><ul class="items">${lis}</ul></div></div>
+      <div class="cat-body"><div><ul class="items">${c.items.map(fila).join('')}</ul></div></div>
     </article>`;
-  }).join('');
-  $('#progTxt').textContent = `${apartados} de ${total} ya escogidos`;
-  $('#progBar').style.width = (total ? apartados / total * 100 : 0) + '%';
+  };
+
+  $('#catsNueva').innerHTML = tarjeta(NUEVA);
+  $('#cats').innerHTML = CATEGORIAS.map(tarjeta).join('');
+  $('#progTxt').textContent = `${escogidos} de ${total} ya escogidos`;
+  $('#progBar').style.width = (total ? escogidos / total * 100 : 0) + '%';
 }
 
-$('#cats').addEventListener('click', e => {
+function alClic(e) {
   const a = e.target.closest('[data-abrir]');
   if (a) {
     const id = a.dataset.abrir, art = a.closest('.cat');
@@ -499,7 +548,9 @@ $('#cats').addEventListener('click', e => {
   }
   const r = e.target.closest('[data-reservar]'); if (r) return abrirReserva(r.dataset.reservar);
   const c = e.target.closest('[data-cancelar]'); if (c) return abrirCancelar(c.dataset.cancelar);
-});
+}
+$('#cats').addEventListener('click', alClic);
+$('#catsNueva').addEventListener('click', alClic);
 
 /* ============ Ventanas ============ */
 const velo = $('#velo'), modal = $('#modal');
@@ -511,6 +562,7 @@ const icono = `<svg class="moño" viewBox="0 0 100 100" aria-hidden="true"><use 
 
 function abrirReserva(id) {
   const it = ITEMS[id];
+  if (!it || !it.abierto) return;
   abrirModal(`${icono}
     <h3 id="mTitulo">${esc(it.nombre)}</h3>
     <p class="cat-n">${it.cat.emoji} ${esc(it.cat.nombre)}</p>
@@ -552,6 +604,7 @@ function mostrarError(t) { const e = $('#rError'); if (e) { e.textContent = t; e
 
 function abrirCancelar(id) {
   const it = ITEMS[id];
+  if (!it || !it.abierto) return;
   abrirModal(`${icono}<h3 id="mTitulo">¿Ya no darás este regalo?</h3>
     <p class="gracias-txt"><b>${esc(it.nombre)}</b> volverá a quedar disponible para otro invitado.</p>
     <p class="error" id="rError" hidden></p>
